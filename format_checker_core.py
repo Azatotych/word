@@ -609,6 +609,12 @@ def collect_issues(doc: docx.document.Document) -> List[Issue]:
 
 def check_document(path: str) -> List[Issue]:
     """Выполняет полную проверку документа и возвращает список Issue."""
+    try:
+        doc = load_document(path)
+    except Exception as exc:  # pragma: no cover - предотвращает UnboundLocal при ошибке открытия
+        # Повторно поднимаем исключение с более понятным сообщением, оставляя стек для отладки.
+        raise IOError(f"Не удалось открыть файл '{path}': {exc}") from exc
+
 
     doc = load_document(path)
     return collect_issues(doc)
