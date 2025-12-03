@@ -1,12 +1,4 @@
-"""Утилита проверки оформления научных статей в формате DOCX (CLI)."""
-import argparse
-import json
-from typing import List
-
-from format_checker_core import Issue, annotate_document, check_document, format_report
-"""Утилита проверки оформления научных статей в формате DOCX."""
-import argparse
-import json
+"""Ядро проверки оформления DOCX: функции анализа и аннотации."""
 import math
 import re
 from dataclasses import dataclass, asdict
@@ -32,15 +24,18 @@ LINE_LENGTH_CHARS = 70
 
 @dataclass
 class Issue:
+    """Структура замечания по оформлению."""
+
     rule: str
     level: str
     message: str
-    context: Optional[str] = None
     paragraph_index: Optional[int] = None
+    paragraph_text: Optional[str] = None
 
-    def to_dict(self, file_name: str) -> dict:
+    def to_dict(self, file_name: Optional[str] = None) -> dict:
         data = asdict(self)
-        data["file"] = file_name
+        if file_name is not None:
+            data["file"] = file_name
         return {key: value for key, value in data.items() if value is not None}
 
 
@@ -54,15 +49,13 @@ def approx_equal(value: float, expected: float, tolerance: float) -> bool:
 
 def load_document(path: str) -> docx.document.Document:
     """Загружает документ DOCX."""
+
     return docx.Document(path)
 
 
 def estimate_page_count(doc: docx.document.Document) -> Tuple[int, int]:
-    """Оценивает количество страниц и число абзацев на последней странице.
+    """Оценивает количество страниц и число абзацев на последней странице."""
 
-    Расчёт приблизительный: исходя из средней длины строки и количества
-    строк на странице.
-    """
     total_lines = 0
     for paragraph in doc.paragraphs:
         text = paragraph.text.strip()
@@ -90,6 +83,7 @@ def estimate_page_count(doc: docx.document.Document) -> Tuple[int, int]:
 
 def get_effective_font(paragraph) -> Tuple[Optional[str], Optional[float], Optional[bool], Optional[bool]]:
     """Возвращает оценку шрифта (имя, размер в pt, bold, italic) для абзаца."""
+
     names = []
     sizes = []
     bold_flags = []
@@ -193,6 +187,7 @@ def check_page_setup(doc: docx.document.Document) -> List[Issue]:
 
 def detect_structure_indices(doc: docx.document.Document) -> Tuple[Optional[int], Optional[int], Optional[int]]:
     """Возвращает индексы абзацев: авторы, заголовок, первый абзац тела."""
+
     paragraphs = doc.paragraphs
     first_nonempty = next((i for i, p in enumerate(paragraphs) if p.text.strip()), None)
     if first_nonempty is None:
@@ -219,7 +214,7 @@ def detect_structure_indices(doc: docx.document.Document) -> Tuple[Optional[int]
 
 def check_paragraphs(doc: docx.document.Document) -> List[Issue]:
     issues: List[Issue] = []
-    authors_idx, title_idx, body_idx = detect_structure_indices(doc)
+    authors_idx, title_idx, _ = detect_structure_indices(doc)
 
     literature_idx = None
     for i, paragraph in enumerate(doc.paragraphs):
@@ -252,8 +247,8 @@ def check_paragraphs(doc: docx.document.Document) -> List[Issue]:
                         rule="FONT_BODY",
                         level="ERROR",
                         message=f"Абзац {i + 1}: размер шрифта {size:.1f} pt, ожидается 10 pt",
-                        context=text[:80],
                         paragraph_index=i,
+                        paragraph_text=text[:80],
                     )
                 )
             if name is not None and DEFAULT_BODY_FONT.lower() not in name.lower():
@@ -263,8 +258,8 @@ def check_paragraphs(doc: docx.document.Document) -> List[Issue]:
                         rule="FONT_BODY",
                         level="ERROR",
                         message=f"Абзац {i + 1}: шрифт '{name}', ожидается Times New Roman",
-                        context=text[:80],
                         paragraph_index=i,
+                        paragraph_text=text[:80],
                     )
                 )
 
@@ -277,8 +272,8 @@ def check_paragraphs(doc: docx.document.Document) -> List[Issue]:
                         rule="FONT_9PT",
                         level="WARN",
                         message=f"Абзац {i + 1}: размер шрифта {size:.1f} pt, ожидается 9 pt",
-                        context=text[:80],
                         paragraph_index=i,
+                        paragraph_text=text[:80],
                     )
                 )
 
@@ -291,8 +286,8 @@ def check_paragraphs(doc: docx.document.Document) -> List[Issue]:
                         rule="LINE_SPACING",
                         level="WARN",
                         message=f"Абзац {i + 1}: межстрочный интервал задан как {line_spacing}",
-                        context=text[:80],
                         paragraph_index=i,
+                        paragraph_text=text[:80],
                     )
                 )
 
@@ -306,8 +301,8 @@ def check_paragraphs(doc: docx.document.Document) -> List[Issue]:
                             rule="INDENT_BY_TABS_OR_SPACES",
                             level="ERROR",
                             message=f"Абзац {i + 1}: отступ первой строки сделан табуляцией/пробелами",
-                            context=text[:80],
                             paragraph_index=i,
+                            paragraph_text=text[:80],
                         )
                     )
             elif not approx_equal(indent, EXPECTED_INDENT_CM, 0.05):
@@ -317,8 +312,8 @@ def check_paragraphs(doc: docx.document.Document) -> List[Issue]:
                         rule="INDENT_SIZE",
                         level="ERROR",
                         message=f"Абзац {i + 1}: отступ первой строки {indent:.2f} см, ожидается 0.50 см",
-                        context=text[:80],
                         paragraph_index=i,
+                        paragraph_text=text[:80],
                     )
                 )
 
@@ -363,8 +358,8 @@ def check_structure(doc: docx.document.Document) -> List[Issue]:
                 rule="AUTHORS_LINE",
                 level="WARN",
                 message="Строка с фамилиями авторов не соответствует требованиям (выравнивание/шрифт/формат)",
-                context=author_text[:80],
                 paragraph_index=authors_idx,
+                paragraph_text=author_text[:80],
             )
         )
     else:
@@ -374,7 +369,6 @@ def check_structure(doc: docx.document.Document) -> List[Issue]:
         issues.append(Issue(rule="TITLE_LAYOUT", level="ERROR", message="Не удалось найти заголовок статьи"))
         return issues
 
-    # Проверка пустой строки между авторами и заголовком
     has_blank_between = any(not p.text.strip() for p in paragraphs[authors_idx + 1 : title_idx])
     if not has_blank_between:
         issues.append(Issue(rule="TITLE_LAYOUT", level="WARN", message="После строки авторов отсутствует пустая строка"))
@@ -398,14 +392,13 @@ def check_structure(doc: docx.document.Document) -> List[Issue]:
                 rule="TITLE_FORMAT",
                 level="ERROR",
                 message="Заголовок не соответствует требуемому шрифту/выравниванию",
-                context=title_text[:80],
                 paragraph_index=title_idx,
+                paragraph_text=title_text[:80],
             )
         )
     else:
         issues.append(Issue(rule="TITLE_FORMAT", level="OK", message="Заголовок оформлен корректно"))
 
-    # Пустая строка после заголовка
     has_blank_after_title = False
     if title_idx + 1 < len(paragraphs):
         has_blank_after_title = paragraphs[title_idx + 1].text.strip() == ""
@@ -432,8 +425,8 @@ def check_structure(doc: docx.document.Document) -> List[Issue]:
                     rule="BODY_START",
                     level="ERROR",
                     message="Первый абзац основного текста не соответствует требованиям",
-                    context=body_text[:80],
                     paragraph_index=body_idx,
+                    paragraph_text=body_text[:80],
                 )
             )
         else:
@@ -465,6 +458,7 @@ def check_literature(doc: docx.document.Document) -> List[Issue]:
                         level="ERROR",
                         message="Заголовок 'Литература' оформлен неверно (требуется 9 pt и полужирный)",
                         paragraph_index=i,
+                        paragraph_text=paragraph.text.strip()[:80],
                     )
                 )
             else:
@@ -487,14 +481,14 @@ def check_literature(doc: docx.document.Document) -> List[Issue]:
             items_ok = False
         if not items_ok:
             issues.append(
-                    Issue(
-                        rule="LITERATURE_ITEMS",
-                        level="WARN",
-                        message="Элементы списка литературы должны быть 9 pt и выровнены по ширине",
-                        context=text[:80],
-                        paragraph_index=literature_idx + 1 + idx,
-                    )
+                Issue(
+                    rule="LITERATURE_ITEMS",
+                    level="WARN",
+                    message="Элементы списка литературы должны быть 9 pt и выровнены по ширине",
+                    paragraph_index=literature_idx + 1 + idx,
+                    paragraph_text=text[:80],
                 )
+            )
             break
 
     if items_ok:
@@ -519,8 +513,8 @@ def check_figures(doc: docx.document.Document) -> List[Issue]:
                         rule="FIGURE_CAPTION_FONT",
                         level="WARN",
                         message=f"Подпись к рисунку (абзац {i + 1}) должна быть 9 pt",
-                        context=text[:80],
                         paragraph_index=i,
+                        paragraph_text=text[:80],
                     )
                 )
             if text.rstrip().endswith('.'):
@@ -529,8 +523,8 @@ def check_figures(doc: docx.document.Document) -> List[Issue]:
                         rule="FIGURE_CAPTION_DOT",
                         level="WARN",
                         message=f"Подпись к рисунку (абзац {i + 1}) заканчивается точкой",
-                        context=text[:80],
                         paragraph_index=i,
+                        paragraph_text=text[:80],
                     )
                 )
     if found_caption and not any(issue.rule.startswith("FIGURE_CAPTION") for issue in issues):
@@ -557,6 +551,7 @@ def check_special_text_rules(doc: docx.document.Document) -> List[Issue]:
                     level="WARN",
                     message="Обнаружены символы табуляции в тексте",
                     paragraph_index=idx,
+                    paragraph_text=text.strip()[:80],
                 )
             )
         if re.match(r"^ {3,}", text) and not leading_spaces_found:
@@ -567,6 +562,7 @@ def check_special_text_rules(doc: docx.document.Document) -> List[Issue]:
                     level="WARN",
                     message="Абзацы начинаются с нескольких пробелов",
                     paragraph_index=idx,
+                    paragraph_text=text.strip()[:80],
                 )
             )
 
@@ -611,8 +607,16 @@ def collect_issues(doc: docx.document.Document) -> List[Issue]:
     return issues
 
 
+def check_document(path: str) -> List[Issue]:
+    """Выполняет полную проверку документа и возвращает список Issue."""
+
+    doc = load_document(path)
+    return collect_issues(doc)
+
+
 def annotate_document(source_path: str, issues: List[Issue]) -> str:
     """Создаёт копию DOCX с подсветкой проблемных абзацев красным цветом."""
+
     output_path = str(Path(source_path).with_name(f"{Path(source_path).stem}_annotated{Path(source_path).suffix}"))
     doc = docx.Document(source_path)
     problem_paragraphs = {
@@ -636,87 +640,34 @@ def annotate_document(source_path: str, issues: List[Issue]) -> str:
     return output_path
 
 
-def print_report(file_name: str, issues: List[Issue], json_mode: bool) -> List[dict]:
-    json_items: List[dict] = []
-    if json_mode:
-        for issue in issues:
-            json_items.append(issue.to_dict(file_name))
+def format_report(issues: List[Issue], file_name: str) -> Tuple[dict, str]:
+    """Строит агрегированные данные отчёта для переиспользования CLI/GUI."""
+
+    totals = {"ERROR": 0, "WARN": 0, "OK": 0}
+    for issue in issues:
+        totals[issue.level] = totals.get(issue.level, 0) + 1
+
+    lines = [f"==== {file_name} ===="]
+    if not issues:
+        lines.append("Нарушений не обнаружено.\n")
     else:
-        print(f"==== {file_name} ====")
-        if not issues:
-            print("Нарушений не обнаружено.\n")
-            return json_items
-        totals = {"ERROR": 0, "WARN": 0, "OK": 0}
-        for issue in issues:
-            totals[issue.level] = totals.get(issue.level, 0) + 1
-        print(
+        lines.append(
             "Итоги: ошибок = {errors}, предупреждений = {warns}, без замечаний = {oks}".format(
                 errors=totals.get("ERROR", 0), warns=totals.get("WARN", 0), oks=totals.get("OK", 0)
             )
         )
         for issue in issues:
             location = f"(абзац {issue.paragraph_index + 1}) " if issue.paragraph_index is not None else ""
-            line = f"[{issue.level}] {issue.rule}: {location}{issue.message}"
-            if issue.context:
-                line += f" | {issue.context}"
-            print(line)
-        print()
-    return json_items
+            snippet = f" | {issue.paragraph_text}" if issue.paragraph_text else ""
+            lines.append(f"[{issue.level}] {issue.rule}: {location}{issue.message}{snippet}")
+        lines.append("")
+
+    return totals, "\n".join(lines)
 
 
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Проверка оформления статей в DOCX")
-    parser.add_argument("files", nargs="+", help="Пути к файлам .docx для проверки")
-    parser.add_argument("--json", action="store_true", dest="json_mode", help="Вывод отчёта в формате JSON")
-    parser.add_argument(
-        "--no-annotate",
-        action="store_true",
-        dest="skip_annotate",
-        help="Не создавать аннотированную копию документа с подсветкой проблем",
-    )
-    return parser.parse_args()
-
-
-def print_report(file_name: str, issues: List[Issue], json_mode: bool) -> List[dict]:
-    json_items: List[dict] = []
-    if json_mode:
-        for issue in issues:
-            json_items.append(issue.to_dict(file_name))
-    else:
-        _, report_text = format_report(issues, file_name)
-        print(report_text)
-    return json_items
-
-
-def main() -> None:
-    args = parse_arguments()
-    all_json_items: List[dict] = []
-
-    for file_path in args.files:
-        try:
-            issues = check_document(file_path)
-        except Exception as exc:  # pragma: no cover - защита от падения на некорректных файлов
-            doc = load_document(file_path)
-        except Exception as exc:  # pragma: no cover - защита от падения на некорректных файлах
-            issue = Issue(rule="LOAD", level="ERROR", message=f"Не удалось открыть файл: {exc}")
-            if args.json_mode:
-                all_json_items.append(issue.to_dict(file_path))
-            else:
-                print(f"==== {file_path} ====")
-                print(f"[{issue.level}] {issue.rule}: {issue.message}\n")
-            continue
-
-        issues = collect_issues(doc)
-        json_items = print_report(file_path, issues, args.json_mode)
-        all_json_items.extend(json_items)
-
-        if not args.json_mode and not args.skip_annotate:
-            annotated_path = annotate_document(file_path, issues)
-            print(f"Аннотированный файл с подсветкой проблемных абзацев: {annotated_path}\n")
-
-    if args.json_mode:
-        print(json.dumps(all_json_items, ensure_ascii=False, indent=2))
-
-
-if __name__ == "__main__":
-    main()
+__all__ = [
+    "Issue",
+    "annotate_document",
+    "check_document",
+    "format_report",
+]
