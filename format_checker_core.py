@@ -615,6 +615,8 @@ def check_document(path: str) -> List[Issue]:
         # Повторно поднимаем исключение с более понятным сообщением, оставляя стек для отладки.
         raise IOError(f"Не удалось открыть файл '{path}': {exc}") from exc
 
+
+    doc = load_document(path)
     return collect_issues(doc)
 
 
